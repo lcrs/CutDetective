@@ -33,16 +33,21 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si);
 //  10    17     24     31
 //  11    18     25     32
 //  12    19     26     33
-SparkFloatStruct SparkFloat14 = {
+SparkFloatStruct SparkFloat21 = {
   0.0,                          // Value
   -INFINITY,                    // Min
   +INFINITY,                    // Max
   0.1,                          // Increment
-  0,                            // Flags
-  (char *) "Difference %.2f",   // Title
+  SPARK_FLAG_NO_INPUT,          // Flags
+  (char *) "Current difference %.2f",   // Title
   NULL                          // Callback
 };
-SparkFloatStruct SparkFloat21 = {
+SparkBooleanStruct SparkBoolean15 = {
+  1,
+  (char *) "Detect cuts",
+  NULL
+};
+SparkFloatStruct SparkFloat22 = {
   2.0,                         // Value
   -INFINITY,                   // Min
   +INFINITY,                   // Max
@@ -180,9 +185,9 @@ unsigned long *SparkAnalyse(SparkInfoStruct si) {
 
   // Set difference key for this frame
   float avgdifference = 100.0 * totaldifference / (front.BufWidth * front.BufHeight);
-	SparkFloat14.Value = avgdifference;
-	sparkSetCurveKey(SPARK_UI_CONTROL, 14, si.FrameNo + 1, avgdifference);
-	sparkControlUpdate(14);
+	SparkFloat21.Value = avgdifference;
+	sparkSetCurveKey(SPARK_UI_CONTROL, 21, si.FrameNo + 1, avgdifference);
+	sparkControlUpdate(21);
 
 	// Copy buffer for next frame
   sparkCopyBuffer(front.Buffer, prev.Buffer);
@@ -195,8 +200,8 @@ void SparkAnalyseEnd(SparkInfoStruct si) {
 	haveprev = 0;
 
 	// Set a key on the thresholds so the lines appear in the animation window
-	float cutthreshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, 0);
-	sparkSetCurveKey(SPARK_UI_CONTROL, 21, 0, cutthreshold0);
+	float cutthreshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 22, 0);
+	sparkSetCurveKey(SPARK_UI_CONTROL, 22, 0, cutthreshold0);
 	float dupthreshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 23, 0);
 	sparkSetCurveKey(SPARK_UI_CONTROL, 23, 0, dupthreshold0);
 }
@@ -272,10 +277,10 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	int prevoutpoint = 0;
   int removed = 0;
 	for(int i = 1; i < si.TotalFrameNo; i++) {
-		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 14, i);
-		float cutthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, i);
+		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, i);
+		float cutthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 22, i);
 		float dupthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 23, i);
-		if(difference > cutthreshold) {
+		if(SparkBoolean15.Value == 1 && difference > cutthreshold) {
       // This frame is the first frame of a new shot, write EDL event for
       // the shot that just finished
 			frame2tc(prevoutpoint, sourcein);
@@ -322,7 +327,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 
 	// Show a message in the interface
 	char *m = (char *) calloc(1000, 1);
-  float avglen = (float)(i - removed) / (float)(eventno - removed);
+  float avglen = (float)(i - removed - 1) / (float)(eventno - removed);
   sprintf(m, "%d cuts in %s, average %.1f fr, removed %d duplicates", eventno - removed, path, avglen, removed);
 	sparkMessage(m);
 	free(m);
