@@ -3,6 +3,12 @@
 // relinked to the input clip has cuts on frames
 // with large differences
 //
+// TODO:
+//  o Adjustable downres, currently skips every other row/col
+//  o Checkerboard shots into two EDLs, to make commiting shots
+//    with duplicate frames easier?
+//  o Worth multithreading the difference loop?
+//
 // lewis@lewissaunders.com
 
 #include <stdlib.h>
@@ -10,8 +16,13 @@
 #include "half.h"
 #include "spark.h"
 
+// ID of Spark buffer we use to store previous frame
 int prevframeid;
+
+// Whether previous frame is available already
 int haveprev = 0;
+
+// Forward declare callback function for save button click
 unsigned long *savebuttoncallback(int what, SparkInfoStruct si);
 
 // UI controls page 1, controls 6-34
@@ -55,7 +66,7 @@ SparkFloatStruct SparkFloat23 = {
   NULL                         // Callback
 };
 SparkStringStruct SparkString11 = {
-	"/tmp/cutdetective.EDL",
+	"/tmp/cutdetective.edl",
 	(char *) "Save as: %s",
 	0,
 	NULL
@@ -133,6 +144,8 @@ unsigned long *SparkAnalyse(SparkInfoStruct si) {
 		haveprev = 1;
 	}
 
+  // Loop through every other pixel, find difference to same pixel
+  // in previous frame, and sum up the differences
   float totaldifference = 0.0;
   for(int y = 0; y < front.BufHeight; y+=2) {
     for(int x = 0; x < front.BufWidth; x+=2) {
@@ -165,12 +178,11 @@ unsigned long *SparkAnalyse(SparkInfoStruct si) {
     }
   }
 
-	if(si.FrameNo > 0) { // Don't set a key on the first frame, it might appear as a duplicate
-	  float avgdifference = 100.0 * totaldifference / (front.BufWidth * front.BufHeight);
-		SparkFloat14.Value = avgdifference;
-		sparkSetCurveKey(SPARK_UI_CONTROL, 14, si.FrameNo + 1, avgdifference);
-		sparkControlUpdate(14);
-	}
+  // Set difference key for this frame
+  float avgdifference = 100.0 * totaldifference / (front.BufWidth * front.BufHeight);
+	SparkFloat14.Value = avgdifference;
+	sparkSetCurveKey(SPARK_UI_CONTROL, 14, si.FrameNo + 1, avgdifference);
+	sparkControlUpdate(14);
 
 	// Copy buffer for next frame
   sparkCopyBuffer(front.Buffer, prev.Buffer);
@@ -241,7 +253,9 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	if(path[pathlen - 1] == '\n') {
 		path[pathlen - 1] = '\0';
 	}
-  char *pathdup = strdup(path); // basename() is within its rights to trash its input
+
+  // basename() is within its rights to trash its input
+  char *pathdup = strdup(path);
   char *base = basename(pathdup);
 
 	FILE *fd = fopen(path, "w");
@@ -257,7 +271,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	int eventno = 1;
 	int prevoutpoint = 0;
   int removed = 0;
-	for(int i = 0; i < si.TotalFrameNo; i++) {
+	for(int i = 1; i < si.TotalFrameNo; i++) {
 		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 14, i);
 		float cutthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, i);
 		float dupthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 23, i);
