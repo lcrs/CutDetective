@@ -6,6 +6,7 @@
 // lewis@lewissaunders.com
 
 #include <stdlib.h>
+#include <libgen.h>
 #include "half.h"
 #include "spark.h"
 
@@ -21,7 +22,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si);
 //  10    17     24     31
 //  11    18     25     32
 //  12    19     26     33
-SparkFloatStruct SparkFloat7 = {
+SparkFloatStruct SparkFloat14 = {
   0.0,                          // Value
   -INFINITY,                    // Min
   +INFINITY,                    // Max
@@ -30,13 +31,27 @@ SparkFloatStruct SparkFloat7 = {
   (char *) "Difference %.2f",   // Title
   NULL                          // Callback
 };
-SparkFloatStruct SparkFloat8 = {
+SparkFloatStruct SparkFloat21 = {
   2.0,                         // Value
   -INFINITY,                   // Min
   +INFINITY,                   // Max
   0.1,                         // Increment
   0,                           // Flags
-  (char *) "Threshold %.2f",   // Title
+  (char *) "Cut threshold %.2f",   // Title
+  NULL                         // Callback
+};
+SparkBooleanStruct SparkBoolean16 = {
+  0,
+  (char *) "Remove duplicate frames",
+  NULL
+};
+SparkFloatStruct SparkFloat23 = {
+  0.05,                        // Value
+  -INFINITY,                   // Min
+  +INFINITY,                   // Max
+  0.1,                         // Increment
+  0,                           // Flags
+  (char *) "Duplicate threshold %.2f",   // Title
   NULL                         // Callback
 };
 SparkStringStruct SparkString11 = {
@@ -50,7 +65,7 @@ SparkIntStruct SparkInt25 = {
   0,                           // Min
   99,                          // Max
   1,                           // Increment
-  0,                           // Flags
+  SPARK_FLAG_NO_ANIM,          // Flags
   (char *) "FPS %2d",          // Title
   NULL                         // Callback
 };
@@ -152,9 +167,9 @@ unsigned long *SparkAnalyse(SparkInfoStruct si) {
 
 	if(si.FrameNo > 0) { // Don't set a key on the first frame, it might appear as a duplicate
 	  float avgdifference = 100.0 * totaldifference / (front.BufWidth * front.BufHeight);
-		SparkFloat7.Value = avgdifference;
-		sparkSetCurveKey(SPARK_UI_CONTROL, 7, si.FrameNo + 1, avgdifference);
-		sparkControlUpdate(7);
+		SparkFloat14.Value = avgdifference;
+		sparkSetCurveKey(SPARK_UI_CONTROL, 14, si.FrameNo + 1, avgdifference);
+		sparkControlUpdate(14);
 	}
 
 	// Copy buffer for next frame
@@ -167,9 +182,11 @@ unsigned long *SparkAnalyse(SparkInfoStruct si) {
 void SparkAnalyseEnd(SparkInfoStruct si) {
 	haveprev = 0;
 
-	// Set a key on the threshold so the line appears in the animation window
-	float threshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 8, 0);
-	sparkSetCurveKey(SPARK_UI_CONTROL, 8, 0, threshold0);
+	// Set a key on the thresholds so the lines appear in the animation window
+	float cutthreshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, 0);
+	sparkSetCurveKey(SPARK_UI_CONTROL, 21, 0, cutthreshold0);
+	float dupthreshold0 = sparkGetCurveValuef(SPARK_UI_CONTROL, 23, 0);
+	sparkSetCurveKey(SPARK_UI_CONTROL, 23, 0, dupthreshold0);
 }
 
 // Spark deletion entry point
@@ -224,41 +241,75 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	if(path[pathlen - 1] == '\n') {
 		path[pathlen - 1] = '\0';
 	}
+  char *pathdup = strdup(path); // basename() is within its rights to trash its input
+  char *base = basename(pathdup);
 
 	FILE *fd = fopen(path, "w");
-	fprintf(fd, "%s", "TITLE: CUT DETECTIVE\n");
+	fprintf(fd, "TITLE: Cut Detective %s\n", base);
 	fprintf(fd, "%s", "FCM: NON-DROP FRAME\n");
 
-	char *inpoint = (char *) malloc(13);
-	char *outpoint = (char *) malloc(13);
+	char *sourcein = (char *) malloc(13);
+	char *sourceout = (char *) malloc(13);
+  char *recordin = (char *) malloc(13);
+  char *recordout = (char *) malloc(13);
+  char *removedtc = (char *) malloc(13);
+  char *cuttc = (char *) malloc(13);
 	int eventno = 1;
 	int prevoutpoint = 0;
+  int removed = 0;
 	for(int i = 0; i < si.TotalFrameNo; i++) {
-		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 7, i);
-		float threshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 8, i);
-		if(difference > threshold) {
-			frame2tc(prevoutpoint, inpoint);
-			frame2tc(i-1, outpoint);
-			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, inpoint, outpoint, inpoint, outpoint);
+		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 14, i);
+		float cutthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, i);
+		float dupthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 23, i);
+		if(difference > cutthreshold) {
+      // This frame is the first frame of a new shot, write EDL event for
+      // the shot that just finished
+			frame2tc(prevoutpoint, sourcein);
+			frame2tc(i - 1, sourceout);
+			frame2tc(prevoutpoint - removed, recordin);
+			frame2tc(i - (removed + 1), recordout);
+			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+      frame2tc(i, cuttc);
+      fprintf(fd, "At end of this shot CutDetective detected cut at source frame %d, %s\n", i, cuttc);
 			eventno++;
-			prevoutpoint = i-1;
+			prevoutpoint = i - 1;
 		}
+    if(SparkBoolean16.Value == 1 && difference < dupthreshold && i > 1) {
+      // This frame needs to be removed, write EDL event for shot that just
+      // finished
+			frame2tc(prevoutpoint, sourcein);
+			frame2tc(i - 1, sourceout);
+			frame2tc(prevoutpoint - removed, recordin);
+			frame2tc(i - (removed + 1), recordout);
+			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+      frame2tc(i, removedtc);
+      fprintf(fd, "At end of this shot CutDetective removed duplicate source frame %d, %s\n", i, removedtc);
+      eventno++;
+      removed++;
+      prevoutpoint = i; // Next shot should start on the next frame, not this one
+    }
 	}
 
 	// Don't forget the last shot!
-	frame2tc(prevoutpoint, inpoint);
-	frame2tc(si.TotalFrameNo, outpoint);
-	fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, inpoint, outpoint, inpoint, outpoint);
+  int i = si.TotalFrameNo + 1;
+  frame2tc(prevoutpoint, sourcein);
+  frame2tc(i - 1, sourceout);
+  frame2tc(prevoutpoint - removed, recordin);
+  frame2tc(i - (removed + 1), recordout);
+  fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+  fprintf(fd, "At end of this shot CutDetective reached end of source\n");
 
-	free(inpoint);
-	free(outpoint);
+	free(sourcein);
+	free(sourceout);
+  free(recordin);
+  free(recordout);
 
 	fclose(fd);
 
 	// Show a message in the interface
 	char *m = (char *) calloc(1000, 1);
-	strcat(m, "Saved detected cuts to ");
-	strcat(m, path);
+  float avglen = (float)(i - removed) / (float)(eventno - removed);
+  sprintf(m, "%d cuts in %s, average %.1f fr, removed %d duplicates", eventno - removed, path, avglen, removed);
 	sparkMessage(m);
 	free(m);
 
