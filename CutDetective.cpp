@@ -4,7 +4,6 @@
 // with large differences
 //
 // TODO:
-//  o Adjustable downres, currently skips every other row/col
 //  o Checkerboard shots into two EDLs, to make commiting shots
 //    with duplicate frames easier?
 //  o Worth multithreading the difference loop?
@@ -311,7 +310,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 			frame2tc(i - (removed + 1), recordout);
 			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
       frame2tc(i, cuttc);
-      fprintf(fd, "At end of this shot CutDetective detected cut at source frame %d, %s\n", i, cuttc);
+      fprintf(fd, "At end of this shot CutDetective detected a cut at source frame %d, %s\n", i, cuttc);
 			eventno++;
 			prevoutpoint = i - 1;
 		}
@@ -344,6 +343,9 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	free(sourceout);
   free(recordin);
   free(recordout);
+  free(removedtc);
+  free(cuttc);
+  free(pathdup);
 
 	fclose(fd);
 
