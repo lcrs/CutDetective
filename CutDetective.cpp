@@ -19,6 +19,9 @@
 // ID of Spark buffer we use to store previous frame
 int prevframeid;
 
+// We store each frame in a malloc()'d buffer here for retrieval on the next frame
+void *prevframebuffer;
+
 // Whether previous frame is available already
 int haveprev = 0;
 
@@ -48,7 +51,7 @@ SparkBooleanStruct SparkBoolean15 = {
   NULL
 };
 SparkFloatStruct SparkFloat22 = {
-  2.0,                         // Value
+  8.0,                         // Value
   -INFINITY,                   // Min
   +INFINITY,                   // Max
   0.1,                         // Increment
@@ -62,7 +65,7 @@ SparkBooleanStruct SparkBoolean16 = {
   NULL
 };
 SparkFloatStruct SparkFloat23 = {
-  0.05,                        // Value
+  0.20,                        // Value
   -INFINITY,                   // Min
   +INFINITY,                   // Max
   0.1,                         // Increment
@@ -88,6 +91,15 @@ SparkIntStruct SparkInt25 = {
 SparkPushStruct SparkPush32 = {
 	(char *) "Save EDL",
 	savebuttoncallback
+};
+SparkIntStruct SparkSetupInt15 = {
+  8,
+  1,
+  128,
+  1,
+  SPARK_FLAG_NO_ANIM,
+  (char *) "Downres factor: %d",
+  NULL
 };
 
 // Check that a Spark image buffer is ready to use
@@ -119,84 +131,103 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
   SparkMemBufStruct result, front, prevframe;
   if(!bufferReady(1, &result)) return(NULL);
   if(!bufferReady(2, &front)) return(NULL);
-  if(!bufferReady(prevframeid, &prevframe)) return(NULL);
 
   sparkCopyBuffer(front.Buffer, result.Buffer);
 
   return(result.Buffer);
-}
-
-// Called when Analyse button pressed
-int SparkAnalyseStart(SparkInfoStruct si) {
-	haveprev = 0;
-  return 1;
 }
 
 // Spark entry point for each frame analysed
 unsigned long *SparkAnalyse(SparkInfoStruct si) {
   // Check Spark image buffers are ready for use
   SparkMemBufStruct result, front, prev;
-  if(!bufferReady(1, &result)) return(NULL);
-  if(!bufferReady(2, &front)) return(NULL);
-  if(!bufferReady(prevframeid, &prev)) return(NULL);
-
-  sparkCopyBuffer(front.Buffer, result.Buffer);
+  if(!bufferReady(1, &result)) {
+    printf("CutDetective: result buffer not ready at frame %d!\n", si.FrameNo);
+    return(NULL);
+  }
+  if(!bufferReady(2, &front)) {
+    printf("CutDetective: front buffer not ready at frame %d!\n", si.FrameNo);
+    return(NULL);
+  }
 
 	if(haveprev == 0) {
 		// If this is the first frame of the analysis, we won't
-		// have a previous frame buffer stored yet
+		// have a previous frame buffer stored yet, so fetch it
+    if(!bufferReady(prevframeid, &prev)) {
+      printf("CutDetective: prev buffer not ready at frame %d!\n", si.FrameNo);
+      return(NULL);
+    }
 	  sparkGetFrame(SPARK_FRONT_CLIP, si.FrameNo - 1, prev.Buffer);
-		haveprev = 1;
+    prevframebuffer = malloc(si.FrameBytes);
+    memcpy(prevframebuffer, prev.Buffer, si.FrameBytes);
+    haveprev = 1;
 	}
 
-  // Loop through every other pixel, find difference to same pixel
+  // Loop through pixels, find difference to same pixel
   // in previous frame, and sum up the differences
   float totaldifference = 0.0;
-  for(int y = 0; y < front.BufHeight; y+=2) {
-    for(int x = 0; x < front.BufWidth; x+=2) {
+  int downres = SparkSetupInt15.Value;
+  for(int y = 0; y < (front.BufHeight - downres); y += downres) {
+    for(int x = 0; x < (front.BufWidth - downres); x += downres) {
       char *frontpixel = (char *)(front.Buffer) + y * front.Stride + x * front.Inc;
-      char *prevpixel = (char *)(prev.Buffer) + y * prev.Stride + x * prev.Inc;
+      char *prevpixel = (char *)(prevframebuffer) + y * front.Stride + x * front.Inc;
 
-      float frontfloat, prevfloat, difference;
+      float r, g, b, l, prevr, prevg, prevb, prevl, difference;
       switch(front.BufDepth) {
         case SPARKBUF_RGB_24_3x8:
-          frontfloat = *((unsigned char *)frontpixel);
-          prevfloat = *((unsigned char *)prevpixel);
-          difference = fabs(frontfloat - prevfloat) / 255.0;
+          r = *(unsigned char *)(frontpixel + 0) / 255.0;
+          g = *(unsigned char *)(frontpixel + 1) / 255.0;
+          b = *(unsigned char *)(frontpixel + 2) / 255.0;
+          prevr = *(unsigned char *)(prevpixel + 0) / 255.0;
+          prevg = *(unsigned char *)(prevpixel + 1) / 255.0;
+          prevb = *(unsigned char *)(prevpixel + 2) / 255.0;
           break;
         case SPARKBUF_RGB_48_3x10:
         case SPARKBUF_RGB_48_3x12:
-          frontfloat = *((unsigned short *)frontpixel);
-          prevfloat = *((unsigned short *)prevpixel);
-          difference = fabs(frontfloat - prevfloat) / 65535.0;
+          r = *(unsigned short *)(frontpixel + 0) / 65535.0;
+          g = *(unsigned short *)(frontpixel + 2) / 65535.0;
+          b = *(unsigned short *)(frontpixel + 4) / 65535.0;
+          prevr = *(unsigned short *)(prevpixel + 0) / 65535.0;
+          prevg = *(unsigned short *)(prevpixel + 2) / 65535.0;
+          prevb = *(unsigned short *)(prevpixel + 4) / 65535.0;
           break;
         case SPARKBUF_RGB_48_3x16_FP:
-          frontfloat = *((half *)frontpixel);
-          prevfloat = *((half *)prevpixel);
-          difference = fabs(frontfloat - prevfloat);
+          r = *(half *)(frontpixel + 0);
+          g = *(half *)(frontpixel + 2);
+          b = *(half *)(frontpixel + 4);
+          prevr = *(half *)(prevpixel + 0);
+          prevg = *(half *)(prevpixel + 2);
+          prevb = *(half *)(prevpixel + 4);
           break;
 				default:
 					break;
       }
 
+      // Rec709 luma weights
+      l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      prevl = 0.2126 * prevr + 0.7152 * prevg + 0.0722 * prevb;
+      difference = fabs(l - prevl);
       totaldifference += difference;
     }
   }
 
   // Set difference key for this frame
-  float avgdifference = 100.0 * totaldifference / (front.BufWidth * front.BufHeight);
+  float avgdifference = 100.0 * totaldifference / ((front.BufWidth/downres) * (front.BufHeight/downres));
 	SparkFloat21.Value = avgdifference;
 	sparkSetCurveKey(SPARK_UI_CONTROL, 21, si.FrameNo + 1, avgdifference);
 	sparkControlUpdate(21);
 
 	// Copy buffer for next frame
-  sparkCopyBuffer(front.Buffer, prev.Buffer);
+  memcpy(prevframebuffer, front.Buffer, si.FrameBytes);
 
-  return(result.Buffer);
+  return(front.Buffer);
 }
 
 // Called when Analyse pass finished
 void SparkAnalyseEnd(SparkInfoStruct si) {
+  printf("Analyse end at frame %d\n", si.FrameNo);
+
+  free(prevframebuffer);
 	haveprev = 0;
 
 	// Set a key on the thresholds so the lines appear in the animation window
@@ -218,18 +249,9 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
     case SPARKBUF_RGB_48_3x12:
     case SPARKBUF_RGB_48_3x16_FP:
       return 1;
-    break;
+      break;
     default:
       return 0;
-  }
-}
-
-// Called by Flame for assorted UI events
-void SparkEvent(SparkModuleEvent e) {
-  if(e == SPARK_EVENT_RESULT) {
-    // For some reason the result view is not always updated when scrubbing in Front view then
-    // hitting F4.  Shame because this makes F1/F4 Front/Result flipping slow
-    sparkReprocess();
   }
 }
 
