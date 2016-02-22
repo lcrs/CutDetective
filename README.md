@@ -4,6 +4,7 @@ Scene detection plugin for Flame and Smoke, which can also remove duplicate fram
 [![CutDetective demo video](http://img.youtube.com/vi/ZKqxdYjC5Ns/3.jpg)](http://www.youtube.com/watch?v=ZKqxdYjC5Ns)
 
 ## Instructions
+- Download from https://github.com/lcrs/CutDetective/releases/latest and unpack into /usr/discreet/sparks or similar
 - In the timeline, add the Spark to the source clip.
 - Enter the Spark editor and hit Analyse on the left.  You can analyse only a portion if you wish.
 - When it's done, take a look at the Animation curves.  You can adjust the two threshold curves to suit difficult footage - only frames where the "Current difference" curve pokes out above the "Cut threshold" are considered to be cuts, and only frames where it's below the "Duplicate threshold" are considered dupes.
