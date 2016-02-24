@@ -11,7 +11,7 @@ Scene detection plugin for Flame and Smoke, which can also remove duplicate fram
 - Back in the Control page, enable or disable cut or duplicate frame detection, then save the EDL.
 - Exit from the Spark editor, and remove the effect from the timeline.
 - In the Conform tab, load the EDL that was just created, setting the framerate the same as in the Spark.
-- Turn off all match criterea except Source Timecode, then select all shots and force them to link by right-clicking the source clip on the right and choosing Link.  Make sure the clip you're linking to has 0-based timecode, so doesn't start at 01:00:00:00 or anything like that.  It also needs to be a regular "source clip", it won't relink to something it thinks is a "Sequence" unfortunately, so you may need to match out from a record timeline first.
+- Turn off all match criterea except Source Timecode, then select all shots and force them to link by right-clicking the source clip in the media panel and choosing Link.  Make sure the clip you're linking to has 0-based timecode, so doesn't start at 01:00:00:00 or anything like that.  It also needs to be a regular "source clip", it won't relink to something it thinks is a "Sequence" unfortunately, so you may need to match out from a record timeline first.
 - Check the cuts in the timeline!
 
 ## Both at once
