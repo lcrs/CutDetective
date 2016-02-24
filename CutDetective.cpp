@@ -297,6 +297,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 	int eventno = 1;
 	int prevoutpoint = 0;
   int removed = 0;
+  int cuts = 0;
 	for(int i = 1; i < si.TotalFrameNo; i++) {
 		float difference = sparkGetCurveValuef(SPARK_UI_CONTROL, 21, i);
 		float cutthreshold = sparkGetCurveValuef(SPARK_UI_CONTROL, 22, i);
@@ -308,22 +309,33 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 			frame2tc(i - 1, sourceout);
 			frame2tc(prevoutpoint - removed, recordin);
 			frame2tc(i - (removed + 1), recordout);
-			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+      if(prevoutpoint != i - 1) {
+        // Only write an event if it wouldn't be zero-length
+        fprintf(fd, "\n%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+  			eventno++;
+        cuts++;
+      }
       frame2tc(i, cuttc);
       fprintf(fd, "At end of this shot CutDetective detected a cut at source frame %d, %s\n", i, cuttc);
-			eventno++;
-			prevoutpoint = i - 1;
+			prevoutpoint = i - 1; // Next shot should start on this frame, i.e. a match-cut
 		}
     if(SparkBoolean16.Value == 1 && difference < dupthreshold && i > 1) {
+      if(prevoutpoint == i - 1) {
+        // We already just finished a shot, don't write a zero-length event
+        // This happens if we're removing multiple dupes in a row
+        removed++;
+        prevoutpoint = i;
+        continue;
+      }
       // This frame needs to be removed, write EDL event for shot that just
       // finished
 			frame2tc(prevoutpoint, sourcein);
 			frame2tc(i - 1, sourceout);
 			frame2tc(prevoutpoint - removed, recordin);
 			frame2tc(i - (removed + 1), recordout);
-			fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+			fprintf(fd, "\n%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
       frame2tc(i, removedtc);
-      fprintf(fd, "At end of this shot CutDetective removed duplicate source frame %d, %s\n", i, removedtc);
+      fprintf(fd, "At end of this shot CutDetective removed duplicate source frames at %d, %s\n", i, removedtc);
       eventno++;
       removed++;
       prevoutpoint = i; // Next shot should start on the next frame, not this one
@@ -336,7 +348,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
   frame2tc(i - 1, sourceout);
   frame2tc(prevoutpoint - removed, recordin);
   frame2tc(i - (removed + 1), recordout);
-  fprintf(fd, "%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
+  fprintf(fd, "\n%06d  MASTER  V  C  %s %s %s %s\n", eventno, sourcein, sourceout, recordin, recordout);
   fprintf(fd, "At end of this shot CutDetective reached end of source\n");
 
 	free(sourcein);
@@ -351,8 +363,8 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 
 	// Show a message in the interface
 	char *m = (char *) calloc(1000, 1);
-  float avglen = (float)(i - removed - 1) / (float)(eventno - removed);
-  sprintf(m, "%d cuts in %s, average %.1f fr, removed %d duplicates", eventno - removed, path, avglen, removed);
+  float avglen = (float)(i - removed - 1) / (float)fmax(1, eventno - removed);
+  sprintf(m, "%d cuts in %s, average %.1f fr, removed %d duplicates", cuts, path, avglen, removed);
 	sparkMessage(m);
 	free(m);
 
