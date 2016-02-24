@@ -24,4 +24,4 @@ spark.h: Makefile
 	ln -sf `ls /usr/discreet/presets/*/sparks/spark.h | head -n1` spark.h
 
 clean:
-	rm -f CutDetective.spark CutDetective.spark_x86_64 CutDetective.o spark.h
+	rm -f CutDetective.$(EXT) CutDetective.o spark.h
