@@ -363,7 +363,7 @@ unsigned long *savebuttoncallback(int what, SparkInfoStruct si) {
 
 	// Show a message in the interface
 	char *m = (char *) calloc(1000, 1);
-  float avglen = (float)(i - removed - 1) / (float)fmax(1, eventno - removed);
+  float avglen = (float)(i - removed - 1) / (cuts+1);
   sprintf(m, "%d cuts in %s, average %.1f fr, removed %d duplicates", cuts, path, avglen, removed);
 	sparkMessage(m);
 	free(m);
